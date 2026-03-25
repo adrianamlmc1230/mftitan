@@ -10,7 +10,8 @@ from app import get_store
 
 store = get_store()
 
-st.title("📈 訊號變化追蹤")
+st.title("📈 訊號追蹤")
+st.caption("比較不同 ETL 版本的訊號變化")
 
 runs = store.list_etl_runs(limit=20)
 completed_runs = [r for r in runs if r["status"] == "completed"]

@@ -23,7 +23,8 @@ from app import get_store
 
 store = get_store()
 
-st.title("📊 Report 看板")
+st.title("📊 報表看板")
+st.caption("查看各聯賽的決策訊號")
 
 # ---------------------------------------------------------------------------
 # 選擇 ETL Run（預設最新）
@@ -138,61 +139,27 @@ def _filter_decision(d: dict) -> bool:
 
 
 def _render_league_signals(league_decisions: list[dict]):
-    """渲染單一聯賽在某分組下的訊號表格。"""
+    """渲染單一聯賽在某分組下的訊號表格（打直格式）。"""
     filtered = [d for d in league_decisions if _filter_decision(d)]
     if not filtered:
         return
 
-    zone_labels = ["Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5"]
-
-    # 按 (play_type, timing) 排序
+    zone_labels = ["-50~-24%", "-23~-8%", "-7~+7%", "+8~+23%", "+24~+50%"]
     filtered.sort(key=lambda d: (d["play_type"], d["timing"]))
 
-    # 判斷是否並排 Early/RT
-    if timing_filter == "全部":
-        # 按玩法分組，Early/RT 並排
-        for pt in (["HDP", "OU"] if play_filter == "全部" else [play_filter]):
-            pt_decisions = [d for d in filtered if d["play_type"] == pt]
-            early = [d for d in pt_decisions if d["timing"] == "Early"]
-            rt = [d for d in pt_decisions if d["timing"] == "RT"]
-
-            if not early and not rt:
-                continue
-
-            st.markdown(f"**{pt}**")
-            c_early, c_rt = st.columns(2)
-            with c_early:
-                if early:
-                    st.caption("Early（早盤）")
-                    for d in early:
-                        rows_data = [
-                            {"方向": "Home", **{zone_labels[i]: d["home_signals"][i] for i in range(5)}},
-                            {"方向": "Away", **{zone_labels[i]: d["away_signals"][i] for i in range(5)}},
-                        ]
-                        st.dataframe(pd.DataFrame(rows_data), use_container_width=True, hide_index=True)
-                else:
-                    st.caption("Early — 無資料")
-            with c_rt:
-                if rt:
-                    st.caption("RT（即時盤）")
-                    for d in rt:
-                        rows_data = [
-                            {"方向": "Home", **{zone_labels[i]: d["home_signals"][i] for i in range(5)}},
-                            {"方向": "Away", **{zone_labels[i]: d["away_signals"][i] for i in range(5)}},
-                        ]
-                        st.dataframe(pd.DataFrame(rows_data), use_container_width=True, hide_index=True)
-                else:
-                    st.caption("RT — 無資料")
-    else:
-        # 單一時段
+    # 建立打直格式：每行一個 Zone，欄位按 play_type-timing 展開
+    rows_data = []
+    for i in range(5):
+        row = {"區間": zone_labels[i]}
         for d in filtered:
             label = f"{d['play_type']}-{d['timing']}"
-            st.markdown(f"**{label}**")
-            rows_data = [
-                {"方向": "Home", **{zone_labels[i]: d["home_signals"][i] for i in range(5)}},
-                {"方向": "Away", **{zone_labels[i]: d["away_signals"][i] for i in range(5)}},
-            ]
-            st.dataframe(pd.DataFrame(rows_data), use_container_width=True, hide_index=True)
+            h = d["home_signals"][i] if i < len(d["home_signals"]) else ""
+            a = d["away_signals"][i] if i < len(d["away_signals"]) else ""
+            row[f"{label} H"] = h
+            row[f"{label} A"] = a
+        rows_data.append(row)
+
+    st.dataframe(pd.DataFrame(rows_data), use_container_width=True, hide_index=True)
 
 
 def _render_league_detail(league_decisions: list[dict]):

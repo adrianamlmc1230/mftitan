@@ -81,7 +81,8 @@ def _validate_param(key: str, value) -> str | None:
 # Main
 # ---------------------------------------------------------------------------
 
-st.title("⚙️ 演算法參數設定")
+st.title("⚙️ 參數設定")
+st.caption("調整演算法參數")
 
 # 恢復預設值按鈕
 col_reset, _ = st.columns([1, 3])

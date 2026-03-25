@@ -15,7 +15,8 @@ from app import get_store
 
 store = get_store()
 
-st.title("📜 ETL 歷史紀錄")
+st.title("📜 歷史紀錄")
+st.caption("查看和管理 ETL 執行歷史")
 
 runs = store.list_etl_runs(limit=50)
 if not runs:

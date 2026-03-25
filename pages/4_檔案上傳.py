@@ -23,7 +23,8 @@ parser = FilenameParser()
 resolver = LeagueResolver(store)
 importer = MatchImporter(store)
 
-st.title("📁 RPA 檔案批量上傳")
+st.title("📁 檔案上傳")
+st.caption("上傳 RPA Excel 檔案，系統自動匯入並更新計算結果")
 
 # ---------------------------------------------------------------------------
 # 檔案上傳

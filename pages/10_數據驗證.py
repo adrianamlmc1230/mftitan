@@ -15,7 +15,8 @@ from app import get_store
 
 store = get_store()
 
-st.title("🔍 數據驗證（新舊系統比對）")
+st.title("🔍 數據驗證")
+st.caption("上傳舊系統 MST 檔案進行新舊系統比對")
 
 # ---------------------------------------------------------------------------
 # 選擇 ETL Run

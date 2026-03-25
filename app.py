@@ -5,7 +5,7 @@ import streamlit as st
 from core.config_store import ConfigStore
 
 st.set_page_config(
-    page_title="足球量化分析 V2",
+    page_title="足球量化分析",
     page_icon="⚽",
     layout="wide",
 )
@@ -18,8 +18,8 @@ def get_store() -> ConfigStore:
 
 
 def main():
-    st.title("⚽ 足球賠率量化分析系統 V2")
-    st.markdown("---")
+    st.title("⚽ 足球量化分析系統")
+    st.caption("系統總覽 — 快速掌握所有聯賽狀態")
 
     store = get_store()
 

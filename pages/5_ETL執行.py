@@ -16,6 +16,7 @@ from core.pipeline import ETLPipeline
 store = get_store()
 
 st.title("🚀 ETL 執行")
+st.caption("手動執行計算流程")
 
 # ---------------------------------------------------------------------------
 # 聯賽清單（只顯示有 match_records 的）
