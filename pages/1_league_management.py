@@ -43,6 +43,33 @@ def _show_league_table(continent_filter: str | None):
 
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
+    # 賽季配對總覽
+    with st.expander("📅 賽季配對總覽"):
+        pair_rows = []
+        for lg in leagues:
+            seasons = store.list_season_instances(lg.id)
+            if not seasons:
+                pair_rows.append({
+                    "聯賽": lg.code,
+                    "賽季": "—",
+                    "年份": "—",
+                    "角色": "無賽季",
+                    "紀錄數": 0,
+                })
+                continue
+            for s in sorted(seasons, key=lambda x: x.year_start, reverse=True):
+                counts = store.get_match_record_counts(s.id)
+                total = sum(counts.values())
+                role_display = {"current": "🟢 本季", "previous": "🔵 上季"}.get(s.role, "⚪ 封存")
+                pair_rows.append({
+                    "聯賽": lg.code,
+                    "賽季": s.label,
+                    "年份": s.year_start,
+                    "角色": role_display,
+                    "紀錄數": total,
+                })
+        st.dataframe(pair_rows, use_container_width=True, hide_index=True)
+
 
 def _add_league_form():
     """新增聯賽表單。"""
