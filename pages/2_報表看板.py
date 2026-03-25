@@ -139,7 +139,7 @@ def _filter_decision(d: dict) -> bool:
 
 
 def _render_league_signals(league_decisions: list[dict]):
-    """渲染單一聯賽在某分組下的訊號表格（打直格式）。"""
+    """渲染單一聯賽在某分組下的訊號表格（打直格式，分開 HDP/OU × Early/RT）。"""
     filtered = [d for d in league_decisions if _filter_decision(d)]
     if not filtered:
         return
@@ -147,19 +147,15 @@ def _render_league_signals(league_decisions: list[dict]):
     zone_labels = ["-50~-24%", "-23~-8%", "-7~+7%", "+8~+23%", "+24~+50%"]
     filtered.sort(key=lambda d: (d["play_type"], d["timing"]))
 
-    # 建立打直格式：每行一個 Zone，欄位按 play_type-timing 展開
-    rows_data = []
-    for i in range(5):
-        row = {"區間": zone_labels[i]}
-        for d in filtered:
-            label = f"{d['play_type']}-{d['timing']}"
+    for d in filtered:
+        label = f"{d['play_type']}-{d['timing']}"
+        rows_data = []
+        for i in range(5):
             h = d["home_signals"][i] if i < len(d["home_signals"]) else ""
             a = d["away_signals"][i] if i < len(d["away_signals"]) else ""
-            row[f"{label} H"] = h
-            row[f"{label} A"] = a
-        rows_data.append(row)
-
-    st.dataframe(pd.DataFrame(rows_data), use_container_width=True, hide_index=True)
+            rows_data.append({"區間": zone_labels[i], "Home": h, "Away": a})
+        st.caption(label)
+        st.dataframe(pd.DataFrame(rows_data), use_container_width=True, hide_index=True)
 
 
 def _render_league_detail(league_decisions: list[dict]):
