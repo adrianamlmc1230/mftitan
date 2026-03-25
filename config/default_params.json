@@ -1,0 +1,14 @@
+{
+    "x_value_boundaries": [-0.24, -0.22, -0.15, -0.08, -0.03, 0.07, 0.15, 0.23],
+    "five_zone_mapping": [[1], [2, 3, 4], [5, 6], [7, 8], [9]],
+    "round_block_size": 10,
+    "guard_ratio_threshold": 1.4,
+    "strength_upgrade_multiplier": 2.0,
+    "settlement_values": {
+        "贏": 1.0,
+        "贏半": 0.5,
+        "輸": 1.0,
+        "輸半": 0.5,
+        "走水": 0.0
+    }
+}
