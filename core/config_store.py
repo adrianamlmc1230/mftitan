@@ -718,8 +718,13 @@ class ConfigStore:
         return cur.lastrowid  # type: ignore[return-value]
 
     def delete_global_group(self, group_id: int) -> None:
-        """刪除全域分組，級聯刪除 league_group_teams。"""
-        # Explicitly delete league_group_teams for safety, even though FK CASCADE handles it
+        """刪除全域分組，級聯刪除關聯資料。"""
+        self._conn.execute(
+            "DELETE FROM computation_results WHERE global_group_id = ?", (group_id,)
+        )
+        self._conn.execute(
+            "DELETE FROM decision_results WHERE global_group_id = ?", (group_id,)
+        )
         self._conn.execute(
             "DELETE FROM league_group_teams WHERE global_group_id = ?", (group_id,)
         )
