@@ -60,6 +60,10 @@ for run in runs:
         if run["status"] == "completed":
             if st.button("檢視", key=f"view_{run['id']}"):
                 st.session_state["history_run_id"] = run["id"]
+        if st.button("🗑️", key=f"del_{run['id']}", help=f"刪除 Run #{run['id']}"):
+            store.delete_etl_run(run["id"])
+            st.success(f"已刪除 Run #{run['id']}")
+            st.rerun()
 
     st.markdown("---")
 

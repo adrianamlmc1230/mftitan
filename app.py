@@ -164,9 +164,40 @@ def main():
     dc2.metric("⚠️ 部分", warn_count)
     dc3.metric("❌ 不可用", err_count)
 
-    st.dataframe(diag_rows, use_container_width=True, hide_index=True)
+    # 篩選
+    fc1, fc2 = st.columns(2)
+    with fc1:
+        status_filter = st.selectbox("篩選狀態", ["全部", "✅ 正常", "⚠️ 部分", "❌ 不可用", "⏸️ 停用"], key="diag_status")
+    with fc2:
+        continent_filter_diag = st.selectbox("篩選洲別", ["全部"] + sorted(set(r["洲別"] for r in diag_rows if r["洲別"] != "—")), key="diag_continent")
+
+    filtered_rows = diag_rows
+    if status_filter != "全部":
+        filtered_rows = [r for r in filtered_rows if r["狀態"] == status_filter]
+    if continent_filter_diag != "全部":
+        filtered_rows = [r for r in filtered_rows if r["洲別"] == continent_filter_diag]
+
+    st.dataframe(filtered_rows, use_container_width=True, hide_index=True)
 
     st.markdown("---")
+
+    # -----------------------------------------------------------------------
+    # 操作日誌（最近 20 筆）
+    # -----------------------------------------------------------------------
+    with st.expander("📋 操作日誌（最近 20 筆）"):
+        logs = store.list_audit_logs(limit=20)
+        if logs:
+            log_rows = [{
+                "時間": log["created_at"],
+                "操作": log["action"],
+                "類型": log["entity_type"],
+                "ID": log.get("entity_id") or "—",
+                "詳情": log.get("details") or "—",
+            } for log in logs]
+            st.dataframe(log_rows, use_container_width=True, hide_index=True)
+        else:
+            st.info("尚無操作日誌")
+
     st.info("請使用左側導航選擇功能頁面。")
 
 

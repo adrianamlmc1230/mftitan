@@ -4,10 +4,15 @@
 - 全域分組名稱管理（新增/刪除）
 - 選擇聯賽後，每個分組顯示本季/上季隊伍的編輯介面
 - 支援從 Team Pool 勾選或手動輸入隊伍
+- 匯入/匯出分組配置
 
 Validates: Requirements 1.1, 1.2, 1.3, 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3
 """
 
+import io
+import json
+
+import pandas as pd
 import streamlit as st
 
 from app import get_store
@@ -165,3 +170,95 @@ for gg in global_groups:
                 else:
                     st.success(f"已儲存「{display_label}」（無變更）")
                 st.rerun()
+
+
+st.markdown("---")
+
+# ===========================================================================
+# Section 3: 匯入/匯出分組配置
+# ===========================================================================
+
+st.header("匯入/匯出分組配置")
+
+col_export, col_import = st.columns(2)
+
+with col_export:
+    st.subheader("📤 匯出")
+    if st.button("匯出全部配置"):
+        all_leagues_list = store.list_leagues(active_only=False)
+        global_groups_list = store.list_global_groups()
+        rows = []
+        for lg in all_leagues_list:
+            for gg in global_groups_list:
+                for role in ("current", "previous"):
+                    teams = store.get_league_group_teams(lg.id, gg.id, role)
+                    if teams:
+                        rows.append({
+                            "聯賽代碼": lg.code,
+                            "聯賽名稱": lg.name_zh,
+                            "分組": gg.name,
+                            "角色": role,
+                            "隊伍": ", ".join(teams),
+                        })
+        if rows:
+            df_export = pd.DataFrame(rows)
+            buf = io.BytesIO()
+            df_export.to_excel(buf, index=False, engine="openpyxl")
+            st.download_button(
+                "📥 下載 Excel",
+                data=buf.getvalue(),
+                file_name="team_group_config.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            st.success(f"已生成 {len(rows)} 筆配置")
+        else:
+            st.info("沒有配置可匯出")
+
+with col_import:
+    st.subheader("📥 匯入")
+    uploaded = st.file_uploader("上傳配置 Excel", type=["xlsx"], key="import_config")
+    if uploaded:
+        try:
+            df_import = pd.read_excel(uploaded, engine="openpyxl")
+            required_cols = {"聯賽代碼", "分組", "角色", "隊伍"}
+            if not required_cols.issubset(set(df_import.columns)):
+                st.error(f"缺少必要欄位：{required_cols - set(df_import.columns)}")
+            else:
+                st.dataframe(df_import, use_container_width=True, hide_index=True)
+                if st.button("確認匯入", type="primary"):
+                    all_leagues_map = {lg.code: lg for lg in store.list_leagues(active_only=False)}
+                    all_groups_map = {gg.name: gg for gg in store.list_global_groups()}
+                    imported = 0
+                    errors = []
+                    for _, row in df_import.iterrows():
+                        code = str(row["聯賽代碼"]).strip()
+                        group_name = str(row["分組"]).strip()
+                        role = str(row["角色"]).strip()
+                        teams_str = str(row["隊伍"]).strip() if pd.notna(row["隊伍"]) else ""
+                        teams = [t.strip() for t in teams_str.split(",") if t.strip()] if teams_str else []
+
+                        lg = all_leagues_map.get(code)
+                        gg = all_groups_map.get(group_name)
+                        if not lg:
+                            errors.append(f"聯賽 {code} 不存在")
+                            continue
+                        if not gg:
+                            errors.append(f"分組 {group_name} 不存在")
+                            continue
+                        if role not in ("current", "previous"):
+                            errors.append(f"角色 {role} 無效")
+                            continue
+
+                        store.set_league_group_teams(lg.id, gg.id, role, teams)
+                        imported += 1
+
+                    store.log_action("import", "team_group_config", details=f"匯入 {imported} 筆")
+                    if errors:
+                        st.warning(f"匯入完成：{imported} 筆成功，{len(errors)} 筆錯誤")
+                        for e in errors[:10]:
+                            st.caption(f"⚠️ {e}")
+                    else:
+                        st.success(f"匯入完成：{imported} 筆")
+                    st.rerun()
+        except Exception as e:
+            st.error(f"讀取失敗：{e}")

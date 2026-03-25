@@ -47,21 +47,24 @@ with st.expander("🔧 切換 ETL 版本", expanded=False):
 run_id = run_options[selected_run_key]
 
 # ---------------------------------------------------------------------------
-# 篩選
-# ---------------------------------------------------------------------------
-
-col_pt, col_tm = st.columns(2)
-with col_pt:
-    play_filter = st.selectbox("玩法", ["全部", "HDP", "OU"])
-with col_tm:
-    timing_filter = st.selectbox("時段", ["全部", "Early", "RT"])
-
-# ---------------------------------------------------------------------------
 # 取得決策結果與對照表
 # ---------------------------------------------------------------------------
 
 all_decisions = store.get_decision_results(run_id)
 all_leagues = {lg.id: lg for lg in store.list_leagues(active_only=False)}
+
+# ---------------------------------------------------------------------------
+# 篩選
+# ---------------------------------------------------------------------------
+
+col_pt, col_tm, col_cont = st.columns(3)
+with col_pt:
+    play_filter = st.selectbox("玩法", ["全部", "HDP", "OU"])
+with col_tm:
+    timing_filter = st.selectbox("時段", ["全部", "Early", "RT"])
+with col_cont:
+    all_continents = sorted(set(lg.continent for lg in all_leagues.values() if lg.continent))
+    continent_filter = st.selectbox("洲別", ["全部"] + all_continents)
 
 # 建立 group_id → (name, display_name) 對照
 _group_cache: dict[int, tuple[str, str]] = {}
@@ -245,6 +248,8 @@ for tab, group_name in zip(group_tabs, group_names):
         ):
             lg = all_leagues.get(league_id)
             if not lg:
+                continue
+            if continent_filter != "全部" and lg.continent != continent_filter:
                 continue
 
             phase_suffix = f"（{lg.phase}）" if lg.phase else ""

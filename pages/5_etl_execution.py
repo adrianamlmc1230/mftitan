@@ -151,6 +151,7 @@ if st.button("▶️ 執行 ETL", type="primary", disabled=len(selected_ids) == 
 
     # 顯示結果摘要
     st.success(f"ETL 執行完成（Run ID: {run_id}）")
+    store.log_action("execute", "etl_run", run_id, f"leagues={selected_ids}")
 
     runs = store.list_etl_runs(limit=1)
     if runs:

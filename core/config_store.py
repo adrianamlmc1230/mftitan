@@ -186,6 +186,18 @@ CREATE TABLE IF NOT EXISTS league_group_teams (
 
 CREATE INDEX IF NOT EXISTS idx_lgt_league ON league_group_teams(league_id);
 CREATE INDEX IF NOT EXISTS idx_lgt_group ON league_group_teams(global_group_id);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    action      TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id   INTEGER,
+    details     TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs(created_at);
 """
 
 
@@ -1352,3 +1364,51 @@ class ConfigStore:
         self._conn.commit()
         logger.info("已清理 %d 筆舊 ETL 紀錄", len(ids_to_delete))
         return len(ids_to_delete)
+
+
+    # ------------------------------------------------------------------
+    # 操作日誌
+    # ------------------------------------------------------------------
+
+    def log_action(self, action: str, entity_type: str,
+                   entity_id: int | None = None, details: str | None = None) -> None:
+        """記錄操作日誌。"""
+        self._conn.execute(
+            "INSERT INTO audit_logs (action, entity_type, entity_id, details) VALUES (?, ?, ?, ?)",
+            (action, entity_type, entity_id, details),
+        )
+        self._auto_commit()
+
+    def list_audit_logs(self, limit: int = 100, entity_type: str | None = None) -> list[dict]:
+        """列出操作日誌。"""
+        sql = "SELECT * FROM audit_logs WHERE 1=1"
+        params: list[Any] = []
+        if entity_type:
+            sql += " AND entity_type = ?"
+            params.append(entity_type)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = self._conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # 刪除單一 ETL Run
+    # ------------------------------------------------------------------
+
+    def delete_etl_run(self, run_id: int) -> bool:
+        """刪除指定的 ETL Run 及其所有關聯資料。
+
+        Returns:
+            True 表示成功刪除，False 表示 run 不存在。
+        """
+        row = self._conn.execute("SELECT id FROM etl_runs WHERE id = ?", (run_id,)).fetchone()
+        if not row:
+            return False
+        self._conn.execute("DELETE FROM computation_results WHERE etl_run_id = ?", (run_id,))
+        self._conn.execute("DELETE FROM decision_results WHERE etl_run_id = ?", (run_id,))
+        self._conn.execute("DELETE FROM quality_issues WHERE etl_run_id = ?", (run_id,))
+        self._conn.execute("DELETE FROM etl_runs WHERE id = ?", (run_id,))
+        self._conn.commit()
+        self.log_action("delete", "etl_run", run_id)
+        return True
+
