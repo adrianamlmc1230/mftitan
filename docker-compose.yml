@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  football-quant:
+    build: .
+    container_name: football-quant
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      # 持久化資料庫到 NAS 本地目錄
+      - ./data/db:/app/db
+    environment:
+      - TZ=Asia/Hong_Kong

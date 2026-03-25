@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.git/
+.gitignore
+.kiro/
+.hypothesis/
+.pytest_cache/
+_archive/
+db/*.db
+db/*.db-shm
+db/*.db-wal
+test_*.png
+*.tmp
+*.bak
+docker-compose.yml
+data/
