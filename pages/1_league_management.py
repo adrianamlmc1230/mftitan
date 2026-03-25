@@ -64,7 +64,7 @@ def _show_league_table(continent_filter: str | None):
                 pair_rows.append({
                     "聯賽": lg.code,
                     "賽季": s.label,
-                    "年份": s.year_start,
+                    "年份": str(s.year_start),
                     "角色": role_display,
                     "紀錄數": total,
                 })
