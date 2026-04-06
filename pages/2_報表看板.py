@@ -20,7 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from app import get_store
-from core.legacy_report import generate_legacy_report
+from core.legacy_report import fill_template_report
 
 store = get_store()
 
@@ -268,16 +268,40 @@ if st.button("📥 匯出 Excel"):
         st.info("沒有資料可匯出。")
 
 # ---------------------------------------------------------------------------
-# 舊版格式匯出（相容 gen_report.py）
+# 舊版格式匯出（模板填充方式）
 # ---------------------------------------------------------------------------
 
 st.markdown("---")
 st.subheader("📋 舊版格式匯出")
-st.caption("產生與舊版 gen_report.py 相同結構的 Report Excel（按洲別分 sheet，RT/Early 並排）")
+st.caption("以舊版 Report 為模板，填入新系統的訊號。格式、樣式、聯賽順序完全保持一致。")
 
-# 讓使用者選擇最多 2 個分組
+import os as _os
+
+_APP_DIR = _os.path.dirname(_os.path.dirname(__file__))
+# Prefer templates inside repo (works in NAS Docker after git clone)
+_REPO_TPL_DIR = _os.path.join(_APP_DIR, "config", "report_templates")
+# Fallback: local dev path outside repo
+_LOCAL_TPL_DIR = _os.path.join(_os.path.dirname(_APP_DIR), "file", "League_Masters")
+
+def _find_template(play_type: str) -> str | None:
+    """找到模板檔案路徑，優先 repo 內，fallback 本地開發路徑。"""
+    name = "讓球Report.xlsx" if play_type == "HDP" else "大小Report.xlsx"
+    repo_path = _os.path.join(_REPO_TPL_DIR, name)
+    if _os.path.exists(repo_path):
+        return repo_path
+    subdir = "讓球" if play_type == "HDP" else "大小"
+    local_path = _os.path.join(_LOCAL_TPL_DIR, subdir, name)
+    if _os.path.exists(local_path):
+        return local_path
+    return None
+
+_HDP_TEMPLATE = _find_template("HDP")
+_OU_TEMPLATE = _find_template("OU")
+_has_hdp_tpl = _HDP_TEMPLATE is not None
+_has_ou_tpl = _OU_TEMPLATE is not None
+
 all_global_groups = store.list_global_groups()
-if all_global_groups and all_decisions:
+if all_global_groups and all_decisions and (_has_hdp_tpl or _has_ou_tpl):
     _gg_options = {f"{gg.name}（{gg.display_name or gg.name}）": gg for gg in all_global_groups}
     selected_gg_keys = st.multiselect(
         "選擇分組（最多 2 個，依序對應報表中的第一段/第二段）",
@@ -290,7 +314,9 @@ if all_global_groups and all_decisions:
     if selected_gg_keys and st.button("📥 匯出舊版 Report", key="legacy_export_btn"):
         selected_groups = [_gg_options[k] for k in selected_gg_keys]
         sel_group_ids = [gg.id for gg in selected_groups]
-        sel_group_names = [gg.display_name or gg.name for gg in selected_groups]
+
+        # Build league_code -> league_id mapping
+        _code_to_id = {lg.code: lg.id for lg in all_leagues.values()}
 
         # Filter decisions for selected groups
         filtered_decisions = [
@@ -301,43 +327,48 @@ if all_global_groups and all_decisions:
         if not filtered_decisions:
             st.warning("所選分組沒有決策結果。")
         else:
-            # Generate HDP report
             hdp_decisions = [d for d in filtered_decisions if d["play_type"] == "HDP"]
             ou_decisions = [d for d in filtered_decisions if d["play_type"] == "OU"]
 
             col_hdp, col_ou = st.columns(2)
 
             with col_hdp:
-                if hdp_decisions:
-                    hdp_bytes = generate_legacy_report(
-                        hdp_decisions, all_leagues, sel_group_ids, sel_group_names, "HDP",
-                    )
+                if _has_hdp_tpl and hdp_decisions:
+                    with open(_HDP_TEMPLATE, "rb") as f:
+                        tpl_bytes = f.read()
+                    result = fill_template_report(tpl_bytes, hdp_decisions, _code_to_id, sel_group_ids)
                     st.download_button(
                         "📥 讓球Report.xlsx",
-                        data=hdp_bytes,
+                        data=result,
                         file_name="讓球Report.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key="dl_hdp_report",
                     )
+                elif not _has_hdp_tpl:
+                    st.info("找不到讓球 Report 模板")
                 else:
                     st.info("無 HDP 決策結果")
 
             with col_ou:
-                if ou_decisions:
-                    ou_bytes = generate_legacy_report(
-                        ou_decisions, all_leagues, sel_group_ids, sel_group_names, "OU",
-                    )
+                if _has_ou_tpl and ou_decisions:
+                    with open(_OU_TEMPLATE, "rb") as f:
+                        tpl_bytes = f.read()
+                    result = fill_template_report(tpl_bytes, ou_decisions, _code_to_id, sel_group_ids)
                     st.download_button(
                         "📥 大小Report.xlsx",
-                        data=ou_bytes,
+                        data=result,
                         file_name="大小Report.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key="dl_ou_report",
                     )
+                elif not _has_ou_tpl:
+                    st.info("找不到大小 Report 模板")
                 else:
                     st.info("無 OU 決策結果")
 else:
     if not all_global_groups:
         st.info("尚無全域分組。")
-    if not all_decisions:
+    elif not all_decisions:
         st.info("此 ETL Run 沒有決策結果。")
+    elif not _has_hdp_tpl and not _has_ou_tpl:
+        st.warning("找不到舊版 Report 模板檔案（file/League_Masters/讓球/讓球Report.xlsx 和 file/League_Masters/大小/大小Report.xlsx）")
