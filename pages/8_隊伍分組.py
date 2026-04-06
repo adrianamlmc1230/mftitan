@@ -20,6 +20,16 @@ from core.mismatch_detector import (
 
 store = get_store()
 
+# Remove multiselect height limit so all selected items are visible without scrolling
+st.markdown("""
+<style>
+    div[data-baseweb="select"] > div {
+        max-height: none !important;
+        overflow: visible !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("👥 隊伍分組")
 st.caption("管理全域分組和各聯賽的隊伍配置")
 
