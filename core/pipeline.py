@@ -12,7 +12,6 @@
 
 import json
 import logging
-import warnings
 from datetime import datetime
 from typing import Callable
 
@@ -228,7 +227,6 @@ class ETLPipeline:
     ) -> dict[tuple[str, str], list[MatchRecord]]:
         """從 match_records 表讀取已前處理的紀錄。
 
-        取代原本的 _process_season_files（從 Excel 讀取）。
         紀錄已在匯入時完成前處理與結算計算，可直接使用。
 
         Returns:
@@ -243,55 +241,6 @@ class ETLPipeline:
                 )
                 if records:
                     result[(play_type, timing)] = records
-
-        return result
-
-    def _process_season_files(
-        self, season, league, boundaries,
-    ) -> dict[tuple[str, str], list[MatchRecord]]:
-        """讀取賽季的所有檔案，前處理並提取紀錄。
-
-        .. deprecated::
-            此方法已棄用，請改用 :meth:`_process_season_records`
-            從 match_records 資料表讀取。
-
-        Returns:
-            {(play_type, timing): [MatchRecord]} 已結算、已分類的紀錄。
-        """
-        warnings.warn(
-            "_process_season_files 已棄用，請改用 _process_season_records",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Lazy import to avoid hard dependency after refactor
-        from core.preprocessor import RawDataPreprocessor
-        from core.reader import RawDataReader
-        from core.settlement import SettlementCalculator
-
-        reader = RawDataReader()
-        preprocessor = RawDataPreprocessor()
-        settlement = SettlementCalculator()
-
-        file_paths = self.store.get_file_paths(season.id)
-        result: dict[tuple[str, str], list[MatchRecord]] = {}
-
-        for fp in file_paths:
-            df = reader.read(fp.file_path)
-            if df.empty:
-                logger.warning("檔案為空或不存在：%s", fp.file_path)
-                continue
-
-            df, _ = preprocessor.process(df)
-            records = reader.extract_records(df)
-
-            # 設定 play_type
-            for rec in records:
-                rec.play_type = fp.play_type
-
-            # 結算計算
-            records = settlement.calculate(records)
-
-            result[(fp.play_type, fp.timing)] = records
 
         return result
 

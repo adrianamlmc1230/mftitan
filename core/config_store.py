@@ -212,7 +212,9 @@ class ConfigStore:
         else:
             full_path = _PROJECT_ROOT / db_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(full_path), check_same_thread=False)
+        self._conn = sqlite3.connect(
+            str(full_path), check_same_thread=False, isolation_level=None,
+        )
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
