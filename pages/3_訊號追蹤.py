@@ -74,10 +74,16 @@ all_keys = sorted(set(old_map.keys()) | set(new_map.keys()))
 # ---------------------------------------------------------------------------
 
 st.markdown("---")
-fcol1, fcol2 = st.columns(2)
+fcol1, fcol2, fcol3, fcol4 = st.columns(4)
 with fcol1:
     play_filter = st.selectbox("玩法", ["全部", "HDP", "OU"])
 with fcol2:
+    timing_filter = st.selectbox("時段", ["全部", "Early", "RT"])
+with fcol3:
+    # Collect all group names from the data
+    _all_group_names = sorted(set(_group_name(k[1]) for k in all_keys))
+    group_filter = st.selectbox("分組", ["全部"] + _all_group_names)
+with fcol4:
     show_mode = st.selectbox("顯示", ["僅變化", "全部"])
 
 # ---------------------------------------------------------------------------
@@ -96,10 +102,15 @@ for key in all_keys:
     lid, gid, pt, tm = key
     if play_filter != "全部" and pt != play_filter:
         continue
+    if timing_filter != "全部" and tm != timing_filter:
+        continue
 
     lg = all_leagues.get(lid)
     lg_label = f"{lg.code} - {lg.name_zh}" if lg else f"#{lid}"
     group_label = _group_name(gid)
+
+    if group_filter != "全部" and group_label != group_filter:
+        continue
 
     old_sig = old_map.get(key)
     new_sig = new_map.get(key)
