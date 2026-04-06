@@ -16,6 +16,13 @@ import pandas as pd
 import streamlit as st
 
 from app import get_store
+from core.mismatch_detector import (
+    FixAction,
+    MismatchEntry,
+    apply_fixes,
+    detect_mismatches,
+    validate_fixes,
+)
 
 store = get_store()
 
@@ -97,6 +104,157 @@ league = league_options[selected_league_key]
 team_pool = store.get_league_team_pool(league.id)
 if not team_pool:
     st.info("此聯賽尚無比賽紀錄，Team Pool 為空。可使用手動輸入方式新增隊伍。")
+
+# ===========================================================================
+# Section 2.5: 全部聯賽隊名不一致偵測
+# ===========================================================================
+
+group_lookup = {gg.id: gg for gg in global_groups}
+all_mismatches: list[MismatchEntry] = []
+# league_id -> (team_pool, all_group_teams) for validation/apply
+_league_ctx: dict[int, tuple[set[str], list]] = {}
+
+for lg in leagues:
+    pool = store.get_league_team_pool(lg.id)
+    if not pool:
+        continue
+    pool_set = set(pool)
+    lgt = store.get_all_league_group_teams(lg.id)
+    if not lgt:
+        continue
+    league_label = f"{lg.code} - {lg.name_zh}"
+    ms = detect_mismatches(lgt, pool_set, group_lookup, lg.id, league_label)
+    if ms:
+        all_mismatches.extend(ms)
+        _league_ctx[lg.id] = (pool_set, lgt)
+
+if not all_mismatches:
+    st.success("✅ 所有聯賽的隊名均存在於各自的 Team Pool 中")
+else:
+    with st.container(border=True):
+        st.subheader(f"⚠️ 隊名不一致偵測（共 {len(all_mismatches)} 筆，涉及 {len(_league_ctx)} 個聯賽）")
+
+        if "mismatch_fixes" not in st.session_state:
+            st.session_state["mismatch_fixes"] = {}
+
+        # Group mismatches by league for display
+        _by_league: dict[int, list[MismatchEntry]] = {}
+        for m in all_mismatches:
+            _by_league.setdefault(m.league_id, []).append(m)
+
+        for lid, entries in _by_league.items():
+            pool_set, _ = _league_ctx[lid]
+            sorted_pool = sorted(pool_set)
+            league_label = entries[0].league_name
+
+            st.markdown(f"#### {league_label}（{len(entries)} 筆）")
+
+            for idx, entry in enumerate(entries):
+                role_label = "本季" if entry.role == "current" else "上季"
+                display_name = entry.group_display_name or entry.group_name
+
+                col_info, col_action, col_target = st.columns([3, 2, 3])
+
+                with col_info:
+                    st.markdown(
+                        f"**{display_name}**（{entry.group_name}）· {role_label} · "
+                        f"`{entry.team_name}`"
+                    )
+
+                fix_key = f"fix_{lid}_{entry.global_group_id}_{entry.role}_{idx}"
+                delete_key = f"del_{lid}_{entry.global_group_id}_{entry.role}_{idx}"
+
+                with col_action:
+                    do_delete = st.checkbox(
+                        "刪除",
+                        key=delete_key,
+                        help=f"勾選後將從分組中移除「{entry.team_name}」",
+                    )
+
+                with col_target:
+                    replace_team = st.selectbox(
+                        "替換為",
+                        options=["（不替換）"] + sorted_pool,
+                        key=fix_key,
+                        disabled=do_delete,
+                        label_visibility="collapsed",
+                    )
+
+                state_key = (
+                    f"mismatch_action_{lid}_{entry.global_group_id}"
+                    f"_{entry.role}_{entry.team_name}"
+                )
+                if do_delete:
+                    st.session_state["mismatch_fixes"][state_key] = FixAction(
+                        league_id=lid,
+                        group_name=entry.group_name,
+                        global_group_id=entry.global_group_id,
+                        role=entry.role,
+                        old_team=entry.team_name,
+                        action="delete",
+                        new_team=None,
+                    )
+                elif replace_team != "（不替換）":
+                    st.session_state["mismatch_fixes"][state_key] = FixAction(
+                        league_id=lid,
+                        group_name=entry.group_name,
+                        global_group_id=entry.global_group_id,
+                        role=entry.role,
+                        old_team=entry.team_name,
+                        action="replace",
+                        new_team=replace_team,
+                    )
+                else:
+                    st.session_state["mismatch_fixes"].pop(state_key, None)
+
+        # Pending count + apply button
+        pending = st.session_state.get("mismatch_fixes", {})
+        if pending:
+            st.caption(f"已選擇 {len(pending)} 筆修正操作")
+
+        if pending and st.button(
+            "🔧 一鍵套用全部修正", type="primary", key="apply_all_fixes"
+        ):
+            fixes = list(pending.values())
+
+            # Validate per league
+            all_errors: list[str] = []
+            for lid, (_, lgt) in _league_ctx.items():
+                league_fixes = [f for f in fixes if f.league_id == lid]
+                if league_fixes:
+                    errs = validate_fixes(league_fixes, lgt)
+                    all_errors.extend(errs)
+
+            if all_errors:
+                for err in all_errors:
+                    st.error(err)
+            else:
+                # Apply per league in sequence
+                try:
+                    all_summary: dict[str, list[str]] = {}
+                    for lid in {f.league_id for f in fixes}:
+                        league_fixes = [f for f in fixes if f.league_id == lid]
+                        summary = apply_fixes(store, lid, league_fixes)
+                        # Prefix summary keys with league name
+                        league_label = next(
+                            (f.group_name for f in league_fixes), str(lid)
+                        )
+                        for k, v in summary.items():
+                            all_summary[k] = v
+
+                    summary_lines = []
+                    for key, changes in all_summary.items():
+                        summary_lines.append(f"**{key}**：{'、'.join(changes)}")
+                    st.success(
+                        f"✅ 已套用 {len(fixes)} 筆修正\n\n"
+                        + "\n\n".join(summary_lines)
+                    )
+                    st.session_state.pop("mismatch_fixes", None)
+                    st.rerun()
+                except RuntimeError as exc:
+                    st.error(f"修正失敗：{exc}")
+
+st.markdown("---")
 
 # --- 每個全域分組一個 expander ---
 for gg in global_groups:
