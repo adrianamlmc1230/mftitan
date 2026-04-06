@@ -20,6 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from app import get_store
+from core.legacy_report import generate_legacy_report
 
 store = get_store()
 
@@ -265,3 +266,78 @@ if st.button("📥 匯出 Excel"):
         )
     else:
         st.info("沒有資料可匯出。")
+
+# ---------------------------------------------------------------------------
+# 舊版格式匯出（相容 gen_report.py）
+# ---------------------------------------------------------------------------
+
+st.markdown("---")
+st.subheader("📋 舊版格式匯出")
+st.caption("產生與舊版 gen_report.py 相同結構的 Report Excel（按洲別分 sheet，RT/Early 並排）")
+
+# 讓使用者選擇最多 2 個分組
+all_global_groups = store.list_global_groups()
+if all_global_groups and all_decisions:
+    _gg_options = {f"{gg.name}（{gg.display_name or gg.name}）": gg for gg in all_global_groups}
+    selected_gg_keys = st.multiselect(
+        "選擇分組（最多 2 個，依序對應報表中的第一段/第二段）",
+        options=list(_gg_options.keys()),
+        max_selections=2,
+        default=list(_gg_options.keys())[:min(2, len(_gg_options))],
+        key="legacy_export_groups",
+    )
+
+    if selected_gg_keys and st.button("📥 匯出舊版 Report", key="legacy_export_btn"):
+        selected_groups = [_gg_options[k] for k in selected_gg_keys]
+        sel_group_ids = [gg.id for gg in selected_groups]
+        sel_group_names = [gg.display_name or gg.name for gg in selected_groups]
+
+        # Filter decisions for selected groups
+        filtered_decisions = [
+            d for d in all_decisions
+            if d.get("global_group_id") in sel_group_ids
+        ]
+
+        if not filtered_decisions:
+            st.warning("所選分組沒有決策結果。")
+        else:
+            # Generate HDP report
+            hdp_decisions = [d for d in filtered_decisions if d["play_type"] == "HDP"]
+            ou_decisions = [d for d in filtered_decisions if d["play_type"] == "OU"]
+
+            col_hdp, col_ou = st.columns(2)
+
+            with col_hdp:
+                if hdp_decisions:
+                    hdp_bytes = generate_legacy_report(
+                        hdp_decisions, all_leagues, sel_group_ids, sel_group_names, "HDP",
+                    )
+                    st.download_button(
+                        "📥 讓球Report.xlsx",
+                        data=hdp_bytes,
+                        file_name="讓球Report.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_hdp_report",
+                    )
+                else:
+                    st.info("無 HDP 決策結果")
+
+            with col_ou:
+                if ou_decisions:
+                    ou_bytes = generate_legacy_report(
+                        ou_decisions, all_leagues, sel_group_ids, sel_group_names, "OU",
+                    )
+                    st.download_button(
+                        "📥 大小Report.xlsx",
+                        data=ou_bytes,
+                        file_name="大小Report.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="dl_ou_report",
+                    )
+                else:
+                    st.info("無 OU 決策結果")
+else:
+    if not all_global_groups:
+        st.info("尚無全域分組。")
+    if not all_decisions:
+        st.info("此 ETL Run 沒有決策結果。")
