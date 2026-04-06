@@ -272,76 +272,73 @@ for role_tab, role, role_label in [
         for cont_tab, cont in zip(cont_tabs, continent_order):
             with cont_tab:
                 cont_leagues = _by_continent[cont]
+                n_groups = len(global_groups)
 
-                # Header row: group names
-                header_cols = st.columns([2] + [1] * len(global_groups))
+                # Header row
+                header_cols = st.columns([3] + [4] * n_groups)
                 with header_cols[0]:
                     st.markdown("**聯賽**")
                 for i, gg in enumerate(global_groups):
                     with header_cols[i + 1]:
                         st.markdown(f"**{gg.display_name or gg.name}**")
 
-                # League rows
+                st.divider()
+
+                # League rows — single row per league
                 for lg in cont_leagues:
-                    with st.container():
-                        label_cols = st.columns([2] + [1] * len(global_groups))
-                        with label_cols[0]:
-                            pool = _get_pool(lg.id)
-                            pool_hint = f"({len(pool)} 隊)" if pool else "(無 Pool)"
-                            st.markdown(f"**{lg.code}** {lg.name_zh} {pool_hint}")
+                    pool = _get_pool(lg.id)
+                    sorted_pool = sorted(pool) if pool else []
 
-                        # Editable multiselects for each group
-                        edit_cols = st.columns([2] + [1] * len(global_groups))
-                        with edit_cols[0]:
-                            pass  # Label column already rendered above
+                    row_cols = st.columns([3] + [4] * n_groups)
 
-                        for gi, gg in enumerate(global_groups):
-                            with edit_cols[gi + 1]:
-                                existing = store.get_league_group_teams(lg.id, gg.id, role)
-                                pool = _get_pool(lg.id)
-                                sorted_pool = sorted(pool) if pool else []
-                                key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
+                    with row_cols[0]:
+                        pool_hint = f"({len(pool)})" if pool else ""
+                        st.markdown(f"**{lg.code}** {lg.name_zh} {pool_hint}")
 
-                                if sorted_pool:
-                                    st.multiselect(
-                                        f"{gg.name}",
-                                        options=sorted_pool,
-                                        default=sorted([t for t in existing if t in pool]),
-                                        key=f"{key_prefix}_ms",
-                                        label_visibility="collapsed",
-                                    )
-                                    extra = [t for t in existing if t not in pool]
-                                    if extra:
-                                        st.caption(f"+{', '.join(extra)}")
-                                else:
-                                    st.text_input(
-                                        f"{gg.name}",
-                                        value=", ".join(existing),
-                                        key=f"{key_prefix}_manual",
-                                        label_visibility="collapsed",
-                                        placeholder="逗號分隔",
-                                    )
-
-                        # Collision detection: check if any team appears in multiple groups
-                        _group_teams_map: dict[str, list[str]] = {}
-                        for gg in global_groups:
+                    for gi, gg in enumerate(global_groups):
+                        with row_cols[gi + 1]:
+                            existing = store.get_league_group_teams(lg.id, gg.id, role)
                             key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
-                            teams_in_group: set[str] = set()
-                            ms_val = st.session_state.get(f"{key_prefix}_ms")
-                            if ms_val:
-                                teams_in_group.update(ms_val)
-                            manual_val = st.session_state.get(f"{key_prefix}_manual", "")
-                            if manual_val and manual_val.strip():
-                                for t in manual_val.split(","):
-                                    t = t.strip()
-                                    if t:
-                                        teams_in_group.add(t)
-                            if not teams_in_group:
-                                # Fallback to DB value (first render before interaction)
-                                existing_db = store.get_league_group_teams(lg.id, gg.id, role)
-                                teams_in_group.update(existing_db)
-                            for t in teams_in_group:
-                                _group_teams_map.setdefault(t, []).append(gg.display_name or gg.name)
+
+                            if sorted_pool:
+                                st.multiselect(
+                                    f"{gg.name}",
+                                    options=sorted_pool,
+                                    default=sorted([t for t in existing if t in pool]),
+                                    key=f"{key_prefix}_ms",
+                                    label_visibility="collapsed",
+                                )
+                                extra = [t for t in existing if t not in pool]
+                                if extra:
+                                    st.caption(f"+{', '.join(extra)}")
+                            else:
+                                st.text_input(
+                                    f"{gg.name}",
+                                    value=", ".join(existing),
+                                    key=f"{key_prefix}_manual",
+                                    label_visibility="collapsed",
+                                    placeholder="逗號分隔",
+                                )
+
+                    # Collision detection
+                    _group_teams_map: dict[str, list[str]] = {}
+                    for gg in global_groups:
+                        key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
+                        teams_in_group: set[str] = set()
+                        ms_val = st.session_state.get(f"{key_prefix}_ms")
+                        if ms_val:
+                            teams_in_group.update(ms_val)
+                        manual_val = st.session_state.get(f"{key_prefix}_manual", "")
+                        if manual_val and manual_val.strip():
+                            for t in manual_val.split(","):
+                                t = t.strip()
+                                if t:
+                                    teams_in_group.add(t)
+                        if not teams_in_group:
+                            existing_db = store.get_league_group_teams(lg.id, gg.id, role)
+                            teams_in_group.update(existing_db)
+                        for t in teams_in_group:
+                            _group_teams_map.setdefault(t, []).append(gg.display_name or gg.name)
 
                         collisions = {t: gs for t, gs in _group_teams_map.items() if len(gs) > 1}
                         if collisions:
