@@ -168,6 +168,11 @@ mc4.metric("移除", removed_count)
 
 # ---------------------------------------------------------------------------
 # Render — side-by-side 5-zone tables per changed item
+# Diff color logic:
+#   Green  = signal appeared (old empty → new has value)
+#   Red    = signal disappeared (old has value → new empty)
+#   Orange = signal changed (both have value but different)
+#   Deeper = higher signal numeric value
 # ---------------------------------------------------------------------------
 
 def _sig_val(sig: str) -> float:
@@ -179,32 +184,53 @@ def _sig_val(sig: str) -> float:
         return 0.0
 
 
-def _highlight_diff(old_list, new_list, col_name):
-    """Return a styler function that highlights cells where old != new."""
-    def styler(val, idx):
-        if idx >= 5:
-            return ""
-        o = old_list[idx] if idx < len(old_list) else ""
-        n = new_list[idx] if idx < len(new_list) else ""
-        sig = val if val else ""
-        if not sig:
-            return ""
-        v = _sig_val(str(sig))
-        alpha = min(v * 0.20, 0.45)
-        letter = str(sig)[0].upper() if sig else ""
-        if o != n:
-            # Changed cell — use signal color
-            if letter == "A":
-                return f"background-color: rgba(34, 139, 34, {max(alpha, 0.12):.2f})"
-            elif letter == "B":
-                return f"background-color: rgba(178, 34, 34, {max(alpha, 0.12):.2f})"
-            return "background-color: rgba(255, 165, 0, 0.15)"
+def _diff_bg(old_val: str, new_val: str, side: str) -> str:
+    """Return CSS background based on diff semantics.
+
+    Args:
+        old_val: signal in old version
+        new_val: signal in new version
+        side: 'old' or 'new' — which table we're rendering
+    """
+    if old_val == new_val:
         return ""
-    return styler
+
+    if side == "new":
+        # New table: highlight what's new or changed
+        if not old_val and new_val:
+            # Appeared — green, deeper for stronger signal
+            alpha = max(_sig_val(new_val) * 0.15, 0.10)
+            return f"background-color: rgba(34, 139, 34, {min(alpha, 0.40):.2f})"
+        elif old_val and not new_val:
+            # Disappeared — no highlight on new side (it's empty)
+            return ""
+        else:
+            # Changed — orange tint
+            alpha = max(_sig_val(new_val) * 0.12, 0.08)
+            return f"background-color: rgba(255, 165, 0, {min(alpha, 0.30):.2f})"
+    else:
+        # Old table: highlight what disappeared
+        if old_val and not new_val:
+            # Disappeared — red, deeper for stronger signal
+            alpha = max(_sig_val(old_val) * 0.15, 0.10)
+            return f"background-color: rgba(178, 34, 34, {min(alpha, 0.40):.2f})"
+        elif not old_val and new_val:
+            # Appeared — no highlight on old side (it's empty)
+            return ""
+        else:
+            # Changed — orange tint
+            alpha = max(_sig_val(old_val) * 0.12, 0.08)
+            return f"background-color: rgba(255, 165, 0, {min(alpha, 0.30):.2f})"
 
 
-def _render_signal_table(signals_h, signals_a, old_h, old_a, is_diff=False):
-    """Render a 5-zone signal table as a styled DataFrame."""
+def _render_signal_table(signals_h, signals_a, other_h, other_a, side: str):
+    """Render a 5-zone signal table with diff-semantic coloring.
+
+    Args:
+        signals_h/a: the signals for this table (Home/Away)
+        other_h/a: the signals from the other version (for comparison)
+        side: 'old' or 'new'
+    """
     rows = []
     for i in range(5):
         h = signals_h[i] if i < len(signals_h) else ""
@@ -212,33 +238,24 @@ def _render_signal_table(signals_h, signals_a, old_h, old_a, is_diff=False):
         rows.append({"區間": ZONE_LABELS[i], "Home": h, "Away": a})
     df = pd.DataFrame(rows)
 
-    if is_diff:
-        def style_fn(row):
-            i = row.name  # row index = zone index
-            styles = [""] * len(row)
-            for col_idx, (col, old_list) in enumerate(
-                [("Home", old_h), ("Away", old_a)]
-            ):
-                if col not in row.index:
-                    continue
-                ci = list(row.index).index(col)
-                sig = str(row[col]) if row[col] else ""
-                old_val = old_list[i] if i < len(old_list) else ""
-                if sig != old_val:
-                    v = _sig_val(sig)
-                    alpha = min(v * 0.20, 0.45)
-                    letter = sig[0].upper() if sig else ""
-                    if letter == "A":
-                        styles[ci] = f"background-color: rgba(34, 139, 34, {max(alpha, 0.12):.2f})"
-                    elif letter == "B":
-                        styles[ci] = f"background-color: rgba(178, 34, 34, {max(alpha, 0.12):.2f})"
-                    elif old_val and not sig:
-                        styles[ci] = "background-color: rgba(128, 128, 128, 0.15)"
-                    else:
-                        styles[ci] = "background-color: rgba(255, 165, 0, 0.15)"
-            return styles
-        return df.style.apply(style_fn, axis=1)
-    return df
+    def style_fn(row):
+        i = row.name
+        styles = [""] * len(row)
+        col_list = list(row.index)
+        for col, other_list in [("Home", other_h), ("Away", other_a)]:
+            if col not in col_list:
+                continue
+            ci = col_list.index(col)
+            this_val = str(row[col]) if row[col] else ""
+            other_val = other_list[i] if i < len(other_list) else ""
+            styles[ci] = _diff_bg(
+                old_val=this_val if side == "old" else other_val,
+                new_val=other_val if side == "old" else this_val,
+                side=side,
+            )
+        return styles
+
+    return df.style.apply(style_fn, axis=1)
 
 
 if not changed_items:
@@ -253,18 +270,22 @@ else:
 
             with left:
                 st.caption(f"舊版 (Run #{old_run_id})")
-                old_df = _render_signal_table(
-                    item["old_h"], item["old_a"],
-                    item["new_h"], item["new_a"],
-                    is_diff=True,
+                st.dataframe(
+                    _render_signal_table(
+                        item["old_h"], item["old_a"],
+                        item["new_h"], item["new_a"],
+                        side="old",
+                    ),
+                    use_container_width=True, hide_index=True,
                 )
-                st.dataframe(old_df, use_container_width=True, hide_index=True)
 
             with right:
                 st.caption(f"新版 (Run #{new_run_id})")
-                new_df = _render_signal_table(
-                    item["new_h"], item["new_a"],
-                    item["old_h"], item["old_a"],
-                    is_diff=True,
+                st.dataframe(
+                    _render_signal_table(
+                        item["new_h"], item["new_a"],
+                        item["old_h"], item["old_a"],
+                        side="new",
+                    ),
+                    use_container_width=True, hide_index=True,
                 )
-                st.dataframe(new_df, use_container_width=True, hide_index=True)
