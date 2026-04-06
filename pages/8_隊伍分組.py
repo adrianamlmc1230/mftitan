@@ -334,9 +334,9 @@ for role_tab, role, role_label in [
                                         placeholder="逗號分隔",
                                     )
                             else:
-                                # Display mode: clean text list
+                                # Display mode: vertical list
                                 if existing:
-                                    st.caption("、".join(existing))
+                                    st.markdown("<br>".join(existing), unsafe_allow_html=True)
                                 else:
                                     st.caption("—")
 
