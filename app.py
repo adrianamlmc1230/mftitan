@@ -70,114 +70,115 @@ def main():
     # -----------------------------------------------------------------------
     # 聯賽健康診斷
     # -----------------------------------------------------------------------
-    st.subheader("聯賽健康診斷")
 
-    # 取得最新 completed ETL run
-    latest_run_id = None
-    completed_runs = [r for r in store.list_etl_runs(limit=5) if r["status"] == "completed"]
-    if completed_runs:
-        latest_run_id = completed_runs[0]["id"]
+    with st.expander("🩺 聯賽健康診斷", expanded=False):
 
-    global_groups = store.list_global_groups()
-    diag_rows = []
+        # 取得最新 completed ETL run
+        latest_run_id = None
+        completed_runs = [r for r in store.list_etl_runs(limit=5) if r["status"] == "completed"]
+        if completed_runs:
+            latest_run_id = completed_runs[0]["id"]
 
-    for lg in leagues:
-        seasons = store.list_season_instances(lg.id)
-        current = next((s for s in seasons if s.role == "current"), None)
-        previous = next((s for s in seasons if s.role == "previous"), None)
+        global_groups = store.list_global_groups()
+        diag_rows = []
 
-        # 比賽紀錄數
-        curr_records = 0
-        prev_records = 0
-        if current:
-            counts = store.get_match_record_counts(current.id)
-            curr_records = sum(counts.values())
-        if previous:
-            counts = store.get_match_record_counts(previous.id)
-            prev_records = sum(counts.values())
+        for lg in leagues:
+            seasons = store.list_season_instances(lg.id)
+            current = next((s for s in seasons if s.role == "current"), None)
+            previous = next((s for s in seasons if s.role == "previous"), None)
 
-        # 分組隊伍配置
-        group_status_parts = []
-        has_any_group = False
-        for gg in global_groups:
-            curr_teams = store.get_league_group_teams(lg.id, gg.id, "current")
-            prev_teams = store.get_league_group_teams(lg.id, gg.id, "previous")
-            if curr_teams or prev_teams:
-                has_any_group = True
-                group_status_parts.append(f"{gg.name}: 本{len(curr_teams)}/上{len(prev_teams)}")
+            # 比賽紀錄數
+            curr_records = 0
+            prev_records = 0
+            if current:
+                counts = store.get_match_record_counts(current.id)
+                curr_records = sum(counts.values())
+            if previous:
+                counts = store.get_match_record_counts(previous.id)
+                prev_records = sum(counts.values())
 
-        group_text = "；".join(group_status_parts) if group_status_parts else "❌ 未配置"
+            # 分組隊伍配置
+            group_status_parts = []
+            has_any_group = False
+            for gg in global_groups:
+                curr_teams = store.get_league_group_teams(lg.id, gg.id, "current")
+                prev_teams = store.get_league_group_teams(lg.id, gg.id, "previous")
+                if curr_teams or prev_teams:
+                    has_any_group = True
+                    group_status_parts.append(f"{gg.name}: 本{len(curr_teams)}/上{len(prev_teams)}")
 
-        # ETL 決策結果
-        decision_count = 0
-        if latest_run_id:
-            decisions = store.get_decision_results(latest_run_id, league_id=lg.id)
-            decision_count = len(decisions)
+            group_text = "；".join(group_status_parts) if group_status_parts else "❌ 未配置"
 
-        # 判斷狀態
-        issues = []
-        if not lg.is_active:
-            issues.append("已停用")
-        if not current:
-            issues.append("無本季")
-        elif curr_records == 0:
-            issues.append("本季無紀錄")
-        if not previous:
-            issues.append("無上季")
-        elif prev_records == 0:
-            issues.append("上季無紀錄")
-        if not has_any_group:
-            issues.append("未配置分組")
-        if decision_count == 0 and lg.is_active and current and curr_records > 0:
-            issues.append("無決策結果")
-        if not lg.continent:
-            issues.append("未設洲別")
+            # ETL 決策結果
+            decision_count = 0
+            if latest_run_id:
+                decisions = store.get_decision_results(latest_run_id, league_id=lg.id)
+                decision_count = len(decisions)
 
-        if not issues:
-            status = "✅ 正常"
-        elif "已停用" in issues:
-            status = "⏸️ 停用"
-        elif any(x in issues for x in ["無本季", "本季無紀錄", "未配置分組"]):
-            status = "❌ 不可用"
-        else:
-            status = "⚠️ 部分"
+            # 判斷狀態
+            issues = []
+            if not lg.is_active:
+                issues.append("已停用")
+            if not current:
+                issues.append("無本季")
+            elif curr_records == 0:
+                issues.append("本季無紀錄")
+            if not previous:
+                issues.append("無上季")
+            elif prev_records == 0:
+                issues.append("上季無紀錄")
+            if not has_any_group:
+                issues.append("未配置分組")
+            if decision_count == 0 and lg.is_active and current and curr_records > 0:
+                issues.append("無決策結果")
+            if not lg.continent:
+                issues.append("未設洲別")
 
-        diag_rows.append({
-            "狀態": status,
-            "代碼": lg.code,
-            "名稱": lg.name_zh,
-            "洲別": lg.continent or "—",
-            "本季": f"{current.label} ({curr_records}筆)" if current else "—",
-            "上季": f"{previous.label} ({prev_records}筆)" if previous else "—",
-            "分組": group_text,
-            "決策": f"{decision_count}筆" if decision_count > 0 else "—",
-            "問題": "、".join(issues) if issues else "—",
-        })
+            if not issues:
+                status = "✅ 正常"
+            elif "已停用" in issues:
+                status = "⏸️ 停用"
+            elif any(x in issues for x in ["無本季", "本季無紀錄", "未配置分組"]):
+                status = "❌ 不可用"
+            else:
+                status = "⚠️ 部分"
 
-    # 摘要指標
-    ok_count = sum(1 for r in diag_rows if r["狀態"] == "✅ 正常")
-    warn_count = sum(1 for r in diag_rows if r["狀態"] == "⚠️ 部分")
-    err_count = sum(1 for r in diag_rows if r["狀態"] == "❌ 不可用")
+            diag_rows.append({
+                "狀態": status,
+                "代碼": lg.code,
+                "名稱": lg.name_zh,
+                "洲別": lg.continent or "—",
+                "本季": f"{current.label} ({curr_records}筆)" if current else "—",
+                "上季": f"{previous.label} ({prev_records}筆)" if previous else "—",
+                "分組": group_text,
+                "決策": f"{decision_count}筆" if decision_count > 0 else "—",
+                "問題": "、".join(issues) if issues else "—",
+            })
 
-    dc1, dc2, dc3 = st.columns(3)
-    dc1.metric("✅ 正常", ok_count)
-    dc2.metric("⚠️ 部分", warn_count)
-    dc3.metric("❌ 不可用", err_count)
+        # 摘要指標
+        ok_count = sum(1 for r in diag_rows if r["狀態"] == "✅ 正常")
+        warn_count = sum(1 for r in diag_rows if r["狀態"] == "⚠️ 部分")
+        err_count = sum(1 for r in diag_rows if r["狀態"] == "❌ 不可用")
 
-    # 篩選
-    fc1, fc2 = st.columns(2)
-    with fc1:
-        status_filter = st.selectbox("篩選狀態", ["全部", "✅ 正常", "⚠️ 部分", "❌ 不可用", "⏸️ 停用"], key="diag_status")
-    with fc2:
-        continent_filter_diag = st.selectbox("篩選洲別", ["全部"] + sorted(set(r["洲別"] for r in diag_rows if r["洲別"] != "—")), key="diag_continent")
+        dc1, dc2, dc3 = st.columns(3)
+        dc1.metric("✅ 正常", ok_count)
+        dc2.metric("⚠️ 部分", warn_count)
+        dc3.metric("❌ 不可用", err_count)
 
-    filtered_rows = diag_rows
-    if status_filter != "全部":
-        filtered_rows = [r for r in filtered_rows if r["狀態"] == status_filter]
-    if continent_filter_diag != "全部":
-        filtered_rows = [r for r in filtered_rows if r["洲別"] == continent_filter_diag]
+        # 篩選
+        fc1, fc2 = st.columns(2)
+        with fc1:
+            status_filter = st.selectbox("篩選狀態", ["全部", "✅ 正常", "⚠️ 部分", "❌ 不可用", "⏸️ 停用"], key="diag_status")
+        with fc2:
+            continent_filter_diag = st.selectbox("篩選洲別", ["全部"] + sorted(set(r["洲別"] for r in diag_rows if r["洲別"] != "—")), key="diag_continent")
 
-    st.dataframe(filtered_rows, use_container_width=True, hide_index=True)
+        filtered_rows = diag_rows
+        if status_filter != "全部":
+            filtered_rows = [r for r in filtered_rows if r["狀態"] == status_filter]
+        if continent_filter_diag != "全部":
+            filtered_rows = [r for r in filtered_rows if r["洲別"] == continent_filter_diag]
+
+        st.dataframe(filtered_rows, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 

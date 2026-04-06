@@ -261,3 +261,7 @@ if results_summary["success"] > 0:
                 run_id = pipeline.execute(league_ids=list(affected_league_ids))
 
             st.success(f"計算完成（Run #{run_id}），Report 看板已更新。")
+            st.markdown("---")
+            st.markdown("**📌 下一步：**")
+            st.page_link("pages/2_報表看板.py", label="📊 前往報表看板查看結果", icon="👉")
+            st.page_link("pages/3_訊號追蹤.py", label="📈 前往訊號追蹤比較變化", icon="👉")

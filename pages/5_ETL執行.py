@@ -40,13 +40,32 @@ if not ready_leagues:
 
 st.subheader("可執行的聯賽")
 
+# Group by continent for filtering
+_continents = sorted(set(lg.continent or "OTHER" for lg, _, _ in ready_leagues))
+etl_continent_filter = st.selectbox("篩選洲別", ["全部"] + _continents, key="etl_continent")
+
+# Select all / none
+sel_col1, sel_col2 = st.columns([1, 1])
+with sel_col1:
+    if st.button("✅ 全選"):
+        st.session_state["etl_select_all"] = True
+        st.rerun()
+with sel_col2:
+    if st.button("❎ 全不選"):
+        st.session_state["etl_select_all"] = False
+        st.rerun()
+
+_select_default = st.session_state.get("etl_select_all", True)
+
 selected_ids: list[int] = []
 for lg, season, counts in ready_leagues:
+    if etl_continent_filter != "全部" and (lg.continent or "OTHER") != etl_continent_filter:
+        continue
     total_records = sum(counts.values())
     detail = ", ".join(f"{pt}-{tm}: {n}筆" for (pt, tm), n in sorted(counts.items()))
     checked = st.checkbox(
         f"{lg.code} - {lg.name_zh}（{season.label}，共 {total_records} 筆：{detail}）",
-        value=True,
+        value=_select_default,
         key=f"chk_{lg.id}",
     )
     if checked:

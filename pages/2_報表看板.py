@@ -206,6 +206,8 @@ for tab, group_name in zip(group_tabs, group_names):
         for d in decisions:
             by_league.setdefault(d["league_id"], []).append(d)
 
+        expand_all = st.checkbox("全部展開", key=f"expand_all_{group_name}")
+
         for league_id, league_decisions in sorted(
             by_league.items(),
             key=lambda x: all_leagues[x[0]].code if x[0] in all_leagues else "",
@@ -216,8 +218,17 @@ for tab, group_name in zip(group_tabs, group_names):
             if continent_filter != "全部" and lg.continent != continent_filter:
                 continue
 
+            # Build signal summary for the expander title
+            filtered_ld = [d for d in league_decisions if _filter_decision(d)]
+            sig_count = sum(
+                1 for d in filtered_ld
+                for s in d["home_signals"] + d["away_signals"]
+                if s
+            )
+            sig_hint = f" — {sig_count} 個訊號" if sig_count > 0 else ""
+
             phase_suffix = f"（{lg.phase}）" if lg.phase else ""
-            with st.expander(f"🏟️ {lg.code} - {lg.name_zh}{phase_suffix}", expanded=False):
+            with st.expander(f"🏟️ {lg.code} - {lg.name_zh}{phase_suffix}{sig_hint}", expanded=expand_all):
                 _render_league_signals(league_decisions)
 
                 if st.checkbox(
