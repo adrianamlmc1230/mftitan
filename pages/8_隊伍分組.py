@@ -284,151 +284,116 @@ for role_tab, role, role_label in [
                 cont_leagues = _by_continent[cont]
                 n_groups = len(global_groups)
 
-                # Build HTML table for display-mode leagues, interleave with edit-mode widgets
-                # First, collect all non-editing leagues for the HTML table
-                display_leagues = []
-                edit_leagues = []
-                for lg in cont_leagues:
+                # Header
+                hdr = st.columns([3] + [4] * n_groups + [1])
+                with hdr[0]:
+                    st.markdown("**聯賽**")
+                for i, gg in enumerate(global_groups):
+                    with hdr[i + 1]:
+                        st.markdown(f"**{gg.display_name or gg.name}**")
+                with hdr[-1]:
+                    st.markdown("")
+                st.divider()
+
+                # Render leagues — each row has: league name | group cells | edit button
+                for row_i, lg in enumerate(cont_leagues):
+                    pool = _get_pool(lg.id)
+                    sorted_pool = sorted(pool) if pool else []
                     edit_key = f"editing_{lg.id}_{role}"
-                    if st.session_state.get(edit_key, False):
-                        edit_leagues.append(lg)
-                    else:
-                        display_leagues.append(lg)
+                    is_editing = st.session_state.get(edit_key, False)
 
-                # Render HTML table for display-mode leagues
-                if display_leagues:
-                    def _team_cell(teams: list[str], count: int) -> str:
-                        """Render a cell with team names and gradient background."""
-                        if not teams:
-                            return '<td style="padding:6px 10px;color:#666;">—</td>'
-                        # Gradient: more teams = slightly deeper background
-                        alpha = min(count * 0.02, 0.25)
-                        bg = f"rgba(100, 149, 237, {alpha:.2f})"
-                        items = "".join(f"<div style='padding:1px 0;'>{t}</div>" for t in teams)
-                        return f'<td style="padding:6px 10px;background:{bg};border-radius:4px;">{items}</td>'
+                    row_cols = st.columns([3] + [4] * n_groups + [1])
 
-                    html_parts = [
-                        "<table style='width:100%;border-collapse:collapse;font-size:14px;'>",
-                        "<thead><tr style='border-bottom:2px solid #444;'>",
-                        "<th style='text-align:left;padding:8px 10px;width:25%;'>聯賽</th>",
-                    ]
-                    for gg in global_groups:
-                        html_parts.append(f"<th style='text-align:left;padding:8px 10px;'>{gg.display_name or gg.name}</th>")
-                    html_parts.append("<th style='width:40px;'></th>")
-                    html_parts.append("</tr></thead><tbody>")
+                    with row_cols[0]:
+                        pool_hint = f"({len(pool)})" if pool else ""
+                        st.markdown(f"**{lg.code}** {lg.name_zh} {pool_hint}")
 
-                    for row_i, lg in enumerate(display_leagues):
-                        pool = _get_pool(lg.id)
-                        row_bg = "rgba(255,255,255,0.03)" if row_i % 2 == 0 else "rgba(255,255,255,0.07)"
-                        html_parts.append(f"<tr style='border-bottom:1px solid #333;background:{row_bg};'>")
-                        pool_hint = f" <span style='color:#888;font-size:12px;'>({len(pool)})</span>" if pool else ""
-                        html_parts.append(f"<td style='padding:6px 10px;font-weight:600;'>{lg.code} {lg.name_zh}{pool_hint}</td>")
+                    if is_editing:
+                        # Edit mode: multiselect widgets
+                        for gi, gg in enumerate(global_groups):
+                            with row_cols[gi + 1]:
+                                existing = store.get_league_group_teams(lg.id, gg.id, role)
+                                key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
+                                if sorted_pool:
+                                    st.multiselect(
+                                        f"{gg.name}",
+                                        options=sorted_pool,
+                                        default=sorted([t for t in existing if t in pool]),
+                                        key=f"{key_prefix}_ms",
+                                        label_visibility="collapsed",
+                                    )
+                                    extra = [t for t in existing if t not in pool]
+                                    if extra:
+                                        st.caption(f"+{', '.join(extra)}")
+                                else:
+                                    st.text_input(
+                                        f"{gg.name}",
+                                        value=", ".join(existing),
+                                        key=f"{key_prefix}_manual",
+                                        label_visibility="collapsed",
+                                        placeholder="逗號分隔",
+                                    )
+                        with row_cols[-1]:
+                            if st.button("💾", key=f"save_btn_{lg.id}_{role}", help="儲存"):
+                                for gg in global_groups:
+                                    key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
+                                    _save_league_group(lg.id, gg.id, role, key_prefix, pool)
+                                st.session_state[edit_key] = False
+                                st.rerun()
 
+                        # Collision detection in edit mode
+                        _group_teams_map: dict[str, list[str]] = {}
                         for gg in global_groups:
-                            teams = store.get_league_group_teams(lg.id, gg.id, role)
-                            html_parts.append(_team_cell(teams, len(teams)))
+                            key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
+                            teams_in_group: set[str] = set()
+                            ms_val = st.session_state.get(f"{key_prefix}_ms")
+                            if ms_val:
+                                teams_in_group.update(ms_val)
+                            manual_val = st.session_state.get(f"{key_prefix}_manual", "")
+                            if manual_val and manual_val.strip():
+                                for t in manual_val.split(","):
+                                    t = t.strip()
+                                    if t:
+                                        teams_in_group.add(t)
+                            if not teams_in_group:
+                                existing_db = store.get_league_group_teams(lg.id, gg.id, role)
+                                teams_in_group.update(existing_db)
+                            for t in teams_in_group:
+                                _group_teams_map.setdefault(t, []).append(gg.display_name or gg.name)
+                        collisions = {t: gs for t, gs in _group_teams_map.items() if len(gs) > 1}
+                        if collisions:
+                            parts = [f"`{t}` → {', '.join(gs)}" for t, gs in sorted(collisions.items())]
+                            st.warning(f"⚡ 隊伍碰撞：{'；'.join(parts)}")
+                    else:
+                        # Display mode: styled HTML cells
+                        for gi, gg in enumerate(global_groups):
+                            with row_cols[gi + 1]:
+                                teams = store.get_league_group_teams(lg.id, gg.id, role)
+                                if teams:
+                                    alpha = min(len(teams) * 0.02, 0.25)
+                                    bg = f"rgba(100, 149, 237, {alpha:.2f})"
+                                    items = "".join(f"<div style='padding:1px 0;'>{t}</div>" for t in teams)
+                                    st.markdown(
+                                        f"<div style='background:{bg};border-radius:4px;padding:4px 8px;font-size:13px;'>{items}</div>",
+                                        unsafe_allow_html=True,
+                                    )
+                                else:
+                                    st.caption("—")
 
-                        html_parts.append(f"<td style='padding:6px 4px;text-align:center;'></td>")
-                        html_parts.append("</tr>")
+                        with row_cols[-1]:
+                            if st.button("✏️", key=f"edit_btn_{lg.id}_{role}", help=f"編輯 {lg.code}"):
+                                st.session_state[edit_key] = True
+                                st.rerun()
 
-                        # Check collisions
+                        # Collision detection in display mode
                         _gtm: dict[str, list[str]] = {}
                         for gg in global_groups:
                             for t in store.get_league_group_teams(lg.id, gg.id, role):
                                 _gtm.setdefault(t, []).append(gg.display_name or gg.name)
-                        collisions = {t: gs for t, gs in _gtm.items() if len(gs) > 1}
-                        if collisions:
-                            n_cols = n_groups + 2
-                            parts_c = [f"<b>{t}</b> → {', '.join(gs)}" for t, gs in sorted(collisions.items())]
-                            html_parts.append(
-                                f"<tr><td colspan='{n_cols}' style='padding:4px 10px;color:#f0ad4e;font-size:12px;'>"
-                                f"⚡ 隊伍碰撞：{'；'.join(parts_c)}</td></tr>"
-                            )
-
-                    html_parts.append("</tbody></table>")
-                    st.markdown("".join(html_parts), unsafe_allow_html=True)
-
-                    # Edit buttons (need to be Streamlit widgets, rendered after the table)
-                    edit_btn_cols = st.columns(len(display_leagues))
-                    for i, lg in enumerate(display_leagues):
-                        with edit_btn_cols[i] if len(display_leagues) <= 8 else st.container():
-                            pass  # handled below
-
-                    # Render edit buttons in a compact row
-                    btn_cols = st.columns(min(len(display_leagues), 6))
-                    for i, lg in enumerate(display_leagues):
-                        col_idx = i % min(len(display_leagues), 6)
-                        with btn_cols[col_idx]:
-                            if st.button(f"✏️ {lg.code}", key=f"edit_btn_{lg.id}_{role}", help=f"編輯 {lg.code}"):
-                                st.session_state[f"editing_{lg.id}_{role}"] = True
-                                st.rerun()
-
-                # Render edit-mode leagues with multiselect widgets
-                for lg in edit_leagues:
-                    pool = _get_pool(lg.id)
-                    sorted_pool = sorted(pool) if pool else []
-
-                    st.markdown(f"---")
-                    edit_header = st.columns([3] + [4] * n_groups + [1])
-                    with edit_header[0]:
-                        st.markdown(f"**✏️ {lg.code}** {lg.name_zh}")
-
-                    for gi, gg in enumerate(global_groups):
-                        with edit_header[gi + 1]:
-                            existing = store.get_league_group_teams(lg.id, gg.id, role)
-                            key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
-                            if sorted_pool:
-                                st.multiselect(
-                                    f"{gg.name}",
-                                    options=sorted_pool,
-                                    default=sorted([t for t in existing if t in pool]),
-                                    key=f"{key_prefix}_ms",
-                                    label_visibility="collapsed",
-                                )
-                                extra = [t for t in existing if t not in pool]
-                                if extra:
-                                    st.caption(f"+{', '.join(extra)}")
-                            else:
-                                st.text_input(
-                                    f"{gg.name}",
-                                    value=", ".join(existing),
-                                    key=f"{key_prefix}_manual",
-                                    label_visibility="collapsed",
-                                    placeholder="逗號分隔",
-                                )
-
-                    with edit_header[-1]:
-                        if st.button("💾", key=f"save_btn_{lg.id}_{role}", help="儲存"):
-                            for gg in global_groups:
-                                key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
-                                _save_league_group(lg.id, gg.id, role, key_prefix, pool)
-                            st.session_state[f"editing_{lg.id}_{role}"] = False
-                            st.rerun()
-
-                    # Collision detection for editing league
-                    _group_teams_map: dict[str, list[str]] = {}
-                    for gg in global_groups:
-                        key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
-                        teams_in_group: set[str] = set()
-                        ms_val = st.session_state.get(f"{key_prefix}_ms")
-                        if ms_val:
-                            teams_in_group.update(ms_val)
-                        manual_val = st.session_state.get(f"{key_prefix}_manual", "")
-                        if manual_val and manual_val.strip():
-                            for t in manual_val.split(","):
-                                t = t.strip()
-                                if t:
-                                    teams_in_group.add(t)
-                        if not teams_in_group:
-                            existing_db = store.get_league_group_teams(lg.id, gg.id, role)
-                            teams_in_group.update(existing_db)
-                        for t in teams_in_group:
-                            _group_teams_map.setdefault(t, []).append(gg.display_name or gg.name)
-
-                    collisions = {t: gs for t, gs in _group_teams_map.items() if len(gs) > 1}
-                    if collisions:
-                        parts = [f"`{t}` → {', '.join(gs)}" for t, gs in sorted(collisions.items())]
-                        st.warning(f"⚡ 隊伍碰撞：{'；'.join(parts)}")
+                        collisions_d = {t: gs for t, gs in _gtm.items() if len(gs) > 1}
+                        if collisions_d:
+                            parts = [f"`{t}` → {', '.join(gs)}" for t, gs in sorted(collisions_d.items())]
+                            st.warning(f"⚡ 隊伍碰撞：{'；'.join(parts)}")
 
                 # (Individual save buttons are per-league row above)
 
