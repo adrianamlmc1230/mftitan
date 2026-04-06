@@ -322,6 +322,32 @@ for role_tab, role, role_label in [
                                         placeholder="逗號分隔",
                                     )
 
+                        # Collision detection: check if any team appears in multiple groups
+                        _group_teams_map: dict[str, list[str]] = {}
+                        for gg in global_groups:
+                            key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
+                            teams_in_group: set[str] = set()
+                            ms_val = st.session_state.get(f"{key_prefix}_ms")
+                            if ms_val:
+                                teams_in_group.update(ms_val)
+                            manual_val = st.session_state.get(f"{key_prefix}_manual", "")
+                            if manual_val and manual_val.strip():
+                                for t in manual_val.split(","):
+                                    t = t.strip()
+                                    if t:
+                                        teams_in_group.add(t)
+                            if not teams_in_group:
+                                # Fallback to DB value (first render before interaction)
+                                existing_db = store.get_league_group_teams(lg.id, gg.id, role)
+                                teams_in_group.update(existing_db)
+                            for t in teams_in_group:
+                                _group_teams_map.setdefault(t, []).append(gg.display_name or gg.name)
+
+                        collisions = {t: gs for t, gs in _group_teams_map.items() if len(gs) > 1}
+                        if collisions:
+                            parts = [f"`{t}` → {', '.join(gs)}" for t, gs in sorted(collisions.items())]
+                            st.warning(f"⚡ 隊伍碰撞：{'；'.join(parts)}")
+
                 # Save button per continent tab
                 if st.button(f"💾 儲存 {continent_labels.get(cont, cont)} {role_label}", key=f"save_{cont}_{role}", type="primary"):
                     saved = 0
