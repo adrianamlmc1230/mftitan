@@ -294,12 +294,14 @@ for role_tab, role, role_label in [
 
                 st.divider()
 
-                # League rows — single row per league
+                # League rows — text display with edit toggle
                 for lg in cont_leagues:
                     pool = _get_pool(lg.id)
                     sorted_pool = sorted(pool) if pool else []
+                    edit_key = f"editing_{lg.id}_{role}"
+                    is_editing = st.session_state.get(edit_key, False)
 
-                    row_cols = st.columns([3] + [4] * n_groups)
+                    row_cols = st.columns([3] + [4] * n_groups + [1])
 
                     with row_cols[0]:
                         pool_hint = f"({len(pool)})" if pool else ""
@@ -310,62 +312,85 @@ for role_tab, role, role_label in [
                             existing = store.get_league_group_teams(lg.id, gg.id, role)
                             key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
 
-                            if sorted_pool:
-                                st.multiselect(
-                                    f"{gg.name}",
-                                    options=sorted_pool,
-                                    default=sorted([t for t in existing if t in pool]),
-                                    key=f"{key_prefix}_ms",
-                                    label_visibility="collapsed",
-                                )
-                                extra = [t for t in existing if t not in pool]
-                                if extra:
-                                    st.caption(f"+{', '.join(extra)}")
+                            if is_editing:
+                                # Edit mode: multiselect + manual input
+                                if sorted_pool:
+                                    st.multiselect(
+                                        f"{gg.name}",
+                                        options=sorted_pool,
+                                        default=sorted([t for t in existing if t in pool]),
+                                        key=f"{key_prefix}_ms",
+                                        label_visibility="collapsed",
+                                    )
+                                    extra = [t for t in existing if t not in pool]
+                                    if extra:
+                                        st.caption(f"+{', '.join(extra)}")
+                                else:
+                                    st.text_input(
+                                        f"{gg.name}",
+                                        value=", ".join(existing),
+                                        key=f"{key_prefix}_manual",
+                                        label_visibility="collapsed",
+                                        placeholder="逗號分隔",
+                                    )
                             else:
-                                st.text_input(
-                                    f"{gg.name}",
-                                    value=", ".join(existing),
-                                    key=f"{key_prefix}_manual",
-                                    label_visibility="collapsed",
-                                    placeholder="逗號分隔",
-                                )
+                                # Display mode: clean text list
+                                if existing:
+                                    st.caption("、".join(existing))
+                                else:
+                                    st.caption("—")
 
-                    # Collision detection
-                    _group_teams_map: dict[str, list[str]] = {}
-                    for gg in global_groups:
-                        key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
-                        teams_in_group: set[str] = set()
-                        ms_val = st.session_state.get(f"{key_prefix}_ms")
-                        if ms_val:
-                            teams_in_group.update(ms_val)
-                        manual_val = st.session_state.get(f"{key_prefix}_manual", "")
-                        if manual_val and manual_val.strip():
-                            for t in manual_val.split(","):
-                                t = t.strip()
-                                if t:
-                                    teams_in_group.add(t)
-                        if not teams_in_group:
-                            existing_db = store.get_league_group_teams(lg.id, gg.id, role)
-                            teams_in_group.update(existing_db)
-                        for t in teams_in_group:
-                            _group_teams_map.setdefault(t, []).append(gg.display_name or gg.name)
+                    # Edit/Save toggle button
+                    with row_cols[-1]:
+                        if is_editing:
+                            if st.button("💾", key=f"save_btn_{lg.id}_{role}", help="儲存"):
+                                for gg in global_groups:
+                                    key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
+                                    _save_league_group(lg.id, gg.id, role, key_prefix, pool)
+                                st.session_state[edit_key] = False
+                                st.rerun()
+                        else:
+                            if st.button("✏️", key=f"edit_btn_{lg.id}_{role}", help="編輯"):
+                                st.session_state[edit_key] = True
+                                st.rerun()
+
+                    # Collision detection (only in edit mode)
+                    if is_editing:
+                        _group_teams_map: dict[str, list[str]] = {}
+                        for gg in global_groups:
+                            key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
+                            teams_in_group: set[str] = set()
+                            ms_val = st.session_state.get(f"{key_prefix}_ms")
+                            if ms_val:
+                                teams_in_group.update(ms_val)
+                            manual_val = st.session_state.get(f"{key_prefix}_manual", "")
+                            if manual_val and manual_val.strip():
+                                for t in manual_val.split(","):
+                                    t = t.strip()
+                                    if t:
+                                        teams_in_group.add(t)
+                            if not teams_in_group:
+                                existing_db = store.get_league_group_teams(lg.id, gg.id, role)
+                                teams_in_group.update(existing_db)
+                            for t in teams_in_group:
+                                _group_teams_map.setdefault(t, []).append(gg.display_name or gg.name)
 
                         collisions = {t: gs for t, gs in _group_teams_map.items() if len(gs) > 1}
                         if collisions:
                             parts = [f"`{t}` → {', '.join(gs)}" for t, gs in sorted(collisions.items())]
                             st.warning(f"⚡ 隊伍碰撞：{'；'.join(parts)}")
-
-                # Save button per continent tab
-                if st.button(f"💾 儲存 {continent_labels.get(cont, cont)} {role_label}", key=f"save_{cont}_{role}", type="primary"):
-                    saved = 0
-                    for lg in cont_leagues:
-                        pool = _get_pool(lg.id)
+                    else:
+                        # Also check collisions in display mode
+                        _group_teams_map_d: dict[str, list[str]] = {}
                         for gg in global_groups:
-                            key_prefix = f"grp_{lg.id}_{gg.id}_{role}"
-                            _save_league_group(lg.id, gg.id, role, key_prefix, pool)
-                            saved += 1
-                    st.success(f"已儲存 {len(cont_leagues)} 個聯賽 × {len(global_groups)} 個分組")
-                    st.rerun()
+                            for t in store.get_league_group_teams(lg.id, gg.id, role):
+                                _group_teams_map_d.setdefault(t, []).append(gg.display_name or gg.name)
+                        collisions_d = {t: gs for t, gs in _group_teams_map_d.items() if len(gs) > 1}
+                        if collisions_d:
+                            parts = [f"`{t}` → {', '.join(gs)}" for t, gs in sorted(collisions_d.items())]
+                            st.warning(f"⚡ 隊伍碰撞：{'；'.join(parts)}")
+
+                # (Individual save buttons are per-league row above)
 
 st.markdown("---")
 
