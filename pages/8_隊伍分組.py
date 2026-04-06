@@ -297,6 +297,9 @@ for role_tab, role, role_label in [
 
                 # Render leagues — each row has: league name | group cells | edit button
                 for row_i, lg in enumerate(cont_leagues):
+                    if row_i > 0:
+                        st.divider()
+
                     pool = _get_pool(lg.id)
                     sorted_pool = sorted(pool) if pool else []
                     edit_key = f"editing_{lg.id}_{role}"
