@@ -28,11 +28,16 @@ ready_leagues = []
 for lg in leagues:
     seasons = store.list_season_instances(lg.id)
     current = next((s for s in seasons if s.role == "current"), None)
+    previous = next((s for s in seasons if s.role == "previous"), None)
     if not current:
         continue
-    counts = store.get_match_record_counts(current.id)
-    if counts:
-        ready_leagues.append((lg, current, counts))
+
+    curr_counts = store.get_match_record_counts(current.id)
+    prev_counts = store.get_match_record_counts(previous.id) if previous else {}
+
+    # Show league if either current or previous has records
+    if curr_counts or prev_counts:
+        ready_leagues.append((lg, current, curr_counts, previous, prev_counts))
 
 if not ready_leagues:
     st.warning("沒有已匯入比賽紀錄的聯賽。請先至「RPA 檔案上傳」頁面匯入資料。")
@@ -41,7 +46,7 @@ if not ready_leagues:
 st.subheader("可執行的聯賽")
 
 # Group by continent for filtering
-_continents = sorted(set(lg.continent or "OTHER" for lg, _, _ in ready_leagues))
+_continents = sorted(set(lg.continent or "OTHER" for lg, _, _, _, _ in ready_leagues))
 etl_continent_filter = st.selectbox("篩選洲別", ["全部"] + _continents, key="etl_continent")
 
 # Select all / none
@@ -58,13 +63,22 @@ with sel_col2:
 _select_default = st.session_state.get("etl_select_all", True)
 
 selected_ids: list[int] = []
-for lg, season, counts in ready_leagues:
+for lg, season, curr_counts, previous, prev_counts in ready_leagues:
     if etl_continent_filter != "全部" and (lg.continent or "OTHER") != etl_continent_filter:
         continue
-    total_records = sum(counts.values())
-    detail = ", ".join(f"{pt}-{tm}: {n}筆" for (pt, tm), n in sorted(counts.items()))
+    curr_total = sum(curr_counts.values())
+    prev_total = sum(prev_counts.values())
+    parts = []
+    if curr_counts:
+        parts.append(f"本季 {curr_total} 筆")
+    if prev_counts:
+        parts.append(f"上季 {prev_total} 筆")
+    detail = "、".join(parts) if parts else "無紀錄"
+    label = f"{lg.code} - {lg.name_zh}（{season.label}，{detail}）"
+    if not curr_counts:
+        label += " ⚠️ 本季無紀錄（僅用上季資料產生訊號）"
     checked = st.checkbox(
-        f"{lg.code} - {lg.name_zh}（{season.label}，共 {total_records} 筆：{detail}）",
+        label,
         value=_select_default,
         key=f"chk_{lg.id}",
     )
@@ -79,7 +93,7 @@ with st.expander("🔧 進階：自訂賽季配對"):
     st.caption("預設使用 role=current/previous。如需指定其他賽季配對，請在此設定。")
     custom_pairs: dict[int, tuple[int, int | None]] = {}
 
-    for lg, season, counts in ready_leagues:
+    for lg, season, curr_counts, previous_s, prev_counts in ready_leagues:
         if lg.id not in selected_ids:
             continue
         all_seasons = store.list_season_instances(lg.id)
@@ -132,7 +146,7 @@ global_groups = store.list_global_groups()
 has_groups = len(global_groups) > 0
 has_assignment_teams = any(
     store.get_all_league_group_teams(lg.id)
-    for lg, _, _ in ready_leagues
+    for lg, _, _, _, _ in ready_leagues
 )
 
 if not has_groups:
